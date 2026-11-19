@@ -35,6 +35,7 @@
             <p id="description"></p>
           </div>
           <div class="actions">
+            <button id="edit" type="button">Level editor</button>
             <button id="reset" type="button">Reset</button>
             <button id="fullscreen" type="button">Fullscreen</button>
           </div>
@@ -62,6 +63,17 @@
     </section>
     <footer class="credits">Based on the original engine by CodeParade.</footer>
   </main>
+  <dialog id="editor" aria-labelledby="editor-title">
+    <h2 id="editor-title">Level editor</h2>
+    <label>Doorway template<select id="template"></select></label><button id="add">Add section</button>
+    <label>Section<select id="parts"></select></label><button id="remove">Remove section</button>
+    <label>Edit transform<select id="doors"></select></label>
+    <div id="pose"></div>
+    <label>Front leads to back of<select id="destination"></select></label>
+    <p>Changing a destination swaps the two incoming links. The first section sets the starting position.</p>
+    <small id="editor-status" role="status"></small>
+    <footer><button id="close">Close</button><button id="play-layout">Playtest level</button></footer>
+  </dialog>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

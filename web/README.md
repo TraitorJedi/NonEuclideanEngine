@@ -20,3 +20,9 @@ Import the project with the **Vite** preset. Set **Root Directory** to `web` whe
 For a local production check, run `npm run build` and then `npm run preview`.
 
 The upstream code and assets are distributed under the MIT license. See [LICENSE](LICENSE).
+
+## Level editor
+
+Open **Level editor** beside Reset. Add a section from any of the seven demo templates. Select **Whole section** to move, rotate, or scale its scenery and doorways together. Select an individual door to adjust its aperture independently of the surrounding mesh. Offsets use section coordinates and rotations are in degrees.
+
+Each door’s front connects to another door’s back. Changing its destination swaps the incoming links so both sides still support return traversal. Links can cross sections. Choose **Playtest level** to load the layout, then **Enter experiment** to explore from the first section’s spawn point. Edits save in this browser on this device.
