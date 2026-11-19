@@ -7,10 +7,17 @@ const key = 'nonEuclidean.builder.v1';
 const models = { floor: 'build_floor', wall: 'build_wall', door: 'tunnel' };
 const textures = { floor: 'checker_green', wall: 'checker_gray', door: 'gold' };
 
+// Keep the crossing plane just outside the wall plus the player's 0.2-unit radius.
+function facePosition(piece) {
+  const yaw = piece.turn * Math.PI / 2;
+  const offset = piece.mounted ? 0.31 : 0;
+  return new Vector3(piece.x - Math.sin(yaw) * offset, 0, piece.z - Math.cos(yaw) * offset);
+}
+
 function matrix(piece) {
   const scale = piece.type === 'door' ? new Vector3(1.25, 1.2, 0.11) : new Vector3(1, 1, 1);
   return new Matrix4().makeRotationY(piece.turn * Math.PI / 2).scale(scale)
-    .setPosition(piece.x, piece.type === 'floor' ? 0.008 : 0, piece.z);
+    .setPosition(facePosition(piece).setY(piece.type === 'floor' ? 0.008 : 0));
 }
 
 export function buildDraft(pieces) {
@@ -20,16 +27,18 @@ export function buildDraft(pieces) {
   for (const [pieceIndex, piece] of pieces.entries()) {
     objects.push({ pieceIndex, model: models[piece.type], texture: textures[piece.type], matrix: matrix(piece) });
     if (piece.type !== 'door') continue;
-    const position = new Vector3(piece.x, 1.2, piece.z);
+    const position = facePosition(piece).setY(1.2);
     const transform = new Matrix4().makeRotationY(piece.turn * Math.PI / 2)
       .scale(new Vector3(0.75, 1.2, 1)).setPosition(position);
-    const portal = { pieceIndex, position, matrix: transform, inverse: transform.clone().invert(),
+    const portal = { mounted: !!piece.mounted, pieceIndex, position, matrix: transform, inverse: transform.clone().invert(),
       normal: new Vector3(0, 0, -1).transformDirection(transform), sides: {} };
     const mate = pairs.get(piece.pair);
     if (!mate) { pairs.set(piece.pair, portal); continue; }
     for (const [entry, exit] of [[portal, mate], [mate, portal]]) {
-      const warp = { exit, matrix: exit.matrix.clone().multiply(entry.inverse) };
-      entry.sides = { front: warp, back: warp };
+      const transfer = exit.matrix.clone();
+      if (exit.mounted) transfer.multiply(new Matrix4().makeRotationY(Math.PI));
+      const warp = { exit, matrix: transfer.multiply(entry.inverse), exitSign: exit.mounted ? 1 : -1 };
+      entry.sides = entry.mounted ? { front: warp } : { front: warp, back: warp };
       portals.push(entry);
     }
     pairs.delete(piece.pair);
@@ -39,7 +48,7 @@ export function buildDraft(pieces) {
     const piece = pieces[door.pieceIndex];
     objects.push({ pieceIndex: door.pieceIndex, model: 'build_wall', texture: textures.wall,
       matrix: new Matrix4().makeRotationY(piece.turn * Math.PI / 2)
-        .scale(new Vector3(0.75, 1, 1)).setPosition(piece.x, 0, piece.z) });
+        .scale(new Vector3(0.75, 1, 1)).setPosition(facePosition(piece)) });
   }
   return { objects, portals, spawn: [0, 1.5, 2] };
 }
@@ -125,6 +134,13 @@ export function mountBuilder(assets, play, pause) {
       1 - 2 * (event.clientY - rect.top) / rect.height);
     const ray = new Raycaster();
     ray.setFromCamera(pointer, camera);
+    if (tool === 'door') {
+      const hit = ray.intersectObjects(placed.children)[0];
+      const wall = pieces[hit?.object.userData.pieceIndex];
+      if (wall?.type !== 'wall' || Math.abs(hit.face.normal.z) < 0.99) return;
+      const facing = (wall.turn + (hit.face.normal.z > 0 ? 2 : 0)) % 4;
+      return { type: 'door', mounted: true, x: wall.x, z: wall.z, turn: facing };
+    }
     const hit = ray.ray.intersectPlane(new Plane(new Vector3(0, 1, 0), 0), new Vector3());
     if (!hit) return;
     const edge = tool === 'wall' || tool === 'door';
@@ -137,8 +153,8 @@ export function mountBuilder(assets, play, pause) {
     ghost.visible = !!piece && !['orbit', 'erase'].includes(tool);
     if (ghost.visible) {
       const floor = tool === 'floor';
-      ghost.position.set(piece.x, floor ? 0.045 : 1.2, piece.z);
-      ghost.rotation.y = turn * Math.PI / 2;
+      ghost.position.copy(facePosition(piece)).y = floor ? 0.045 : 1.2;
+      ghost.rotation.y = piece.turn * Math.PI / 2;
       ghost.scale.set(2, floor ? 0.04 : 2.4, floor ? 2 : 0.2);
     }
     redraw();
@@ -158,17 +174,29 @@ export function mountBuilder(assets, play, pause) {
       const hit = ray.intersectObjects(placed.children.slice(1))[0];
       if (!hit) return;
       index = hit.object.userData.pieceIndex;
+      const wall = pieces[index];
+      if (wall.type === 'wall' && Math.abs(hit.face.normal.z) > 0.99) {
+        const facing = (wall.turn + (hit.face.normal.z > 0 ? 2 : 0)) % 4;
+        const endpoint = pieces.findIndex(p => p.mounted && p.x === wall.x && p.z === wall.z && p.turn === facing);
+        if (endpoint >= 0) index = endpoint;
+      }
+    } else if (tool === 'door') {
+      if (pieces.some(p => p.mounted && p.x === piece.x && p.z === piece.z && p.turn === piece.turn)) return;
+      index = -1;
     } else {
-      index = pieces.findIndex(p => p.x === piece.x && p.z === piece.z);
+      index = pieces.findIndex(p => !p.mounted && p.x === piece.x && p.z === piece.z);
       if (index >= 0 && pieces[index].type === tool && pieces[index].turn === turn) return;
     }
     history.push(pieces.slice());
-    if (index >= 0) pieces.splice(index, 1);
+    if (index >= 0) {
+      const [removed] = pieces.splice(index, 1);
+      if (removed.type === 'wall') pieces = pieces.filter(p => !p.mounted || p.x !== removed.x || p.z !== removed.z);
+    }
     if (tool !== 'erase') {
       if (tool === 'door') {
         const counts = new Map();
-        for (const p of pieces.filter(p => p.type === 'door')) counts.set(p.pair, (counts.get(p.pair) ?? 0) + 1);
-        piece.pair = [...counts].find(([, n]) => n === 1)?.[0] ?? Math.max(0, ...counts.keys()) + 1;
+        for (const p of pieces.filter(p => p.type === 'door' && p.mounted)) counts.set(p.pair, (counts.get(p.pair) ?? 0) + 1);
+        piece.pair = [...counts].find(([, n]) => n === 1)?.[0] ?? Math.max(0, ...pieces.filter(p => p.type === 'door').map(p => p.pair)) + 1;
         status.textContent = counts.has(piece.pair) ? 'Door pair ' + piece.pair + ' linked' : 'Place the other end of door pair ' + piece.pair;
       }
       pieces.push(piece);
@@ -183,7 +211,7 @@ export function mountBuilder(assets, play, pause) {
       if (controls) controls.enabled = tool === 'orbit';
       for (const b of dialog.querySelectorAll('[data-tool]')) b.setAttribute('aria-pressed', String(b === button));
       ghost.visible = false; redraw();
-      status.textContent = tool === 'orbit' ? 'Drag to orbit. Pinch or scroll to zoom. Right-drag or use two fingers to pan.' : 'Tap the grid to ' + (tool === 'erase' ? 'erase a piece' : 'place a ' + tool);
+      status.textContent = tool === 'door' ? 'Click a broad wall face. Orbit to reach the opposite side.' : tool === 'orbit' ? 'Drag to orbit. Pinch or scroll to zoom. Right-drag or use two fingers to pan.' : 'Tap the grid to ' + (tool === 'erase' ? 'erase a piece' : 'place a ' + tool);
     }
     switch (button.dataset.action) {
       case 'rotate': turn = (turn + 1) % 4; status.textContent = 'Placement rotation ' + turn * 90 + '°'; ghost.visible = false; redraw(); break;

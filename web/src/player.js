@@ -70,6 +70,7 @@ export class Player {
       if (time >= nearest) continue;
       const hit = closest.copy(before).lerp(this.position, time).applyMatrix4(portal.inverse);
       if (Math.abs(hit.x) >= 1 || Math.abs(hit.y) >= 1) continue;
+      if (!portal.sides[distanceA > 0 ? 'front' : 'back']) continue;
       nearest = time;
       crossing = { warp: portal.sides[distanceA > 0 ? 'front' : 'back'], portal, distanceA };
     }

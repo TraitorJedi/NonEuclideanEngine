@@ -152,6 +152,7 @@ export class PortalRenderer {
       if (!visible) continue;
       const side = eye.clone().sub(portal.position).dot(portal.normal) > 0 ? 1 : -1;
       const warp = portal.sides[side > 0 ? 'front' : 'back'];
+      if (!warp) continue;
       const canRecurse = depth < maxDepth &&
         (visible[2] - visible[0]) * width > 4 && (visible[3] - visible[1]) * height > 4;
 
@@ -160,7 +161,7 @@ export class PortalRenderer {
         through.matrixWorld.multiplyMatrices(warp.matrix, camera.matrixWorld);
         through.matrixWorldInverse.copy(through.matrixWorld).invert();
         through.projectionMatrix.copy(this.camera.projectionMatrix);
-        const normal = warp.exit.normal.clone().multiplyScalar(-side);
+        const normal = warp.exit.normal.clone().multiplyScalar((warp.exitSign ?? -1) * side);
         const planePoint = warp.exit.position.clone().addScaledVector(normal, -0.007);
         clipProjection(through.projectionMatrix, through.matrixWorldInverse, planePoint, normal);
         this.render(level, through, depth + 1, visible, warp.exit);
