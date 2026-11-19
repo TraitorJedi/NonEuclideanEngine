@@ -63,6 +63,20 @@
     </section>
     <footer class="credits">Based on the original engine by CodeParade.</footer>
   </main>
+  <dialog id="builder" aria-label="Level builder">
+    <header><h2>Level builder</h2><button data-action="close">Close</button></header>
+    <nav aria-label="Building tools">
+      <button data-tool="floor" aria-pressed="true">Floor tile</button>
+      <button data-tool="wall" aria-pressed="false">Wall</button>
+      <button data-tool="door" aria-pressed="false">Door</button>
+      <button data-action="rotate">Rotate 90°</button>
+      <button data-tool="erase" aria-pressed="false">Erase</button>
+      <button data-tool="orbit" aria-pressed="false">Camera</button>
+      <button data-action="undo" disabled>Undo</button>
+    </nav>
+    <canvas aria-label="3D level construction grid"></canvas>
+    <footer><output>Tap the grid to place a floor tile.</output><button id="advanced-editor">Demo templates</button><button data-action="play">Playtest</button></footer>
+  </dialog>
   <dialog id="editor" aria-labelledby="editor-title">
     <h2 id="editor-title">Level editor</h2>
     <label>Doorway template<select id="template"></select></label><button id="add">Add section</button>

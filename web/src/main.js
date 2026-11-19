@@ -3,6 +3,7 @@ import { createAssets, makeCollider, makeSurface } from './assets.js';
 import { buildLevel, levels } from './levels.js';
 import { Player } from './player.js';
 import { PortalRenderer } from './renderer.js';
+import { mountBuilder } from './builder.js';
 import { mountEditor } from './editor.js';
 import './style.css';
 
@@ -171,7 +172,7 @@ function reset() {
 }
 
 function onKey(event) {
-  if (document.querySelector('#editor').open) return;
+  if (document.querySelector('dialog[open]')) return;
   if (event.altKey && event.code === 'Enter') {
     if (!event.repeat && !ui.fullscreen.disabled) fullscreen();
     event.preventDefault();
@@ -313,12 +314,14 @@ function animate(timestamp) {
 try {
   renderer = new PortalRenderer(ui.scene);
   wireControls();
-  mountEditor(layout => {
+  const playLayout = layout => {
     pause();
     cachedLevels.get(-1)?.then(old => old.scene.children.forEach(mesh => mesh.material.dispose()), () => {});
     cachedLevels.delete(-1);
     select(-1, layout);
-  });
+  };
+  mountEditor(playLayout);
+  mountBuilder(assets, playLayout, pause);
   new ResizeObserver(([entry]) => {
     const { width, height } = entry.contentRect;
     if (width < 1 || height < 1) return;

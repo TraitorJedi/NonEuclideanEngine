@@ -85,7 +85,7 @@ export function mountEditor(play) {
     if (saved?.length) { compileLayout(saved); parts = saved; }
   } catch { /* Start with a fresh draft if stored data is unreadable. */ }
   if (!parts.length) append(0);
-  document.querySelector('#edit').onclick = () => { render(); dialog.showModal(); };
+  document.querySelector('#advanced-editor').onclick = () => { document.querySelector('#builder').close(); render(); dialog.showModal(); };
   find('close').onclick = () => dialog.close();
   find('add').onclick = () => { append(Number(template.value)); save(); render(); };
   partList.onchange = () => { partIndex = Number(partList.value); doorIndex = -1; render(); };
