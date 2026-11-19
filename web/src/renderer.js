@@ -162,7 +162,7 @@ export class PortalRenderer {
         through.matrixWorldInverse.copy(through.matrixWorld).invert();
         through.projectionMatrix.copy(this.camera.projectionMatrix);
         const normal = warp.exit.normal.clone().multiplyScalar((warp.exitSign ?? -1) * side);
-        const planePoint = warp.exit.position.clone().addScaledVector(normal, -0.007);
+        const planePoint = warp.exit.position.clone().addScaledVector(normal, warp.exit.mounted ? 0 : -0.007);
         clipProjection(through.projectionMatrix, through.matrixWorldInverse, planePoint, normal);
         this.render(level, through, depth + 1, visible, warp.exit);
         renderer.setRenderTarget(target);

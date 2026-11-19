@@ -63,13 +63,15 @@ export class Player {
     let nearest = 1;
     let crossing;
     for (const portal of level.portals) {
-      const distanceA = delta.subVectors(before, portal.position).dot(portal.normal);
-      const distanceB = delta.subVectors(this.position, portal.position).dot(portal.normal);
+      const clearance = portal.mounted ? radius : 0;
+      const distanceA = delta.subVectors(before, portal.position).dot(portal.normal) - clearance;
+      const distanceB = delta.subVectors(this.position, portal.position).dot(portal.normal) - clearance;
       if (distanceA * distanceB > 0 || Math.abs(distanceA - distanceB) < 1e-9) continue;
       const time = distanceA / (distanceA - distanceB);
       if (time >= nearest) continue;
       const hit = closest.copy(before).lerp(this.position, time).applyMatrix4(portal.inverse);
       if (Math.abs(hit.x) >= 1 || Math.abs(hit.y) >= 1) continue;
+      if (portal.mounted && Math.abs(hit.x) * 0.75 + radius > 0.75) continue;
       if (!portal.sides[distanceA > 0 ? 'front' : 'back']) continue;
       nearest = time;
       crossing = { warp: portal.sides[distanceA > 0 ? 'front' : 'back'], portal, distanceA };
@@ -79,6 +81,7 @@ export class Player {
       const e = warp.matrix.elements;
       this.position.addScaledVector(portal.normal, distanceA > 0 ? -0.004 : 0.004)
         .applyMatrix4(warp.matrix);
+      if (warp.exit.mounted) this.position.addScaledVector(warp.exit.normal, 2 * radius);
       this.rotation.y += Math.atan2(e[8], e[10]);
       const origin = closest.set(0, 0, 0).applyMatrix4(warp.matrix);
       this.velocity.applyMatrix4(warp.matrix).sub(origin);

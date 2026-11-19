@@ -7,15 +7,15 @@ const key = 'nonEuclidean.builder.v1';
 const models = { floor: 'build_floor', wall: 'build_wall', door: 'tunnel' };
 const textures = { floor: 'checker_green', wall: 'checker_gray', door: 'gold' };
 
-// Keep the crossing plane just outside the wall plus the player's 0.2-unit radius.
+// The wall face is 0.08 units from its center. Bias the decal to avoid z-fighting.
 function facePosition(piece) {
   const yaw = piece.turn * Math.PI / 2;
-  const offset = piece.mounted ? 0.31 : 0;
+  const offset = piece.mounted ? 0.082 : 0;
   return new Vector3(piece.x - Math.sin(yaw) * offset, 0, piece.z - Math.cos(yaw) * offset);
 }
 
 function matrix(piece) {
-  const scale = piece.type === 'door' ? new Vector3(1.25, 1.2, 0.11) : new Vector3(1, 1, 1);
+  const scale = piece.type === 'door' && !piece.mounted ? new Vector3(1.25, 1.2, 0.11) : new Vector3(1, 1, 1);
   return new Matrix4().makeRotationY(piece.turn * Math.PI / 2).scale(scale)
     .setPosition(facePosition(piece).setY(piece.type === 'floor' ? 0.008 : 0));
 }
@@ -25,11 +25,12 @@ export function buildDraft(pieces) {
   const portals = [];
   const pairs = new Map();
   for (const [pieceIndex, piece] of pieces.entries()) {
-    objects.push({ pieceIndex, model: models[piece.type], texture: textures[piece.type], matrix: matrix(piece) });
+    objects.push({ pieceIndex, model: piece.mounted ? 'wall_frame' : models[piece.type], texture: textures[piece.type], matrix: matrix(piece) });
     if (piece.type !== 'door') continue;
-    const position = facePosition(piece).setY(1.2);
+    const halfHeight = piece.mounted ? 1.1 : 1.2;
+    const position = facePosition(piece).setY(halfHeight);
     const transform = new Matrix4().makeRotationY(piece.turn * Math.PI / 2)
-      .scale(new Vector3(0.75, 1.2, 1)).setPosition(position);
+      .scale(new Vector3(0.75, halfHeight, 1)).setPosition(position);
     const portal = { mounted: !!piece.mounted, pieceIndex, position, matrix: transform, inverse: transform.clone().invert(),
       normal: new Vector3(0, 0, -1).transformDirection(transform), sides: {} };
     const mate = pairs.get(piece.pair);
@@ -46,6 +47,7 @@ export function buildDraft(pieces) {
   // A single endpoint is a solid door until its partner exists.
   for (const door of pairs.values()) {
     const piece = pieces[door.pieceIndex];
+    if (piece.mounted) continue; // The host wall already seals this endpoint.
     objects.push({ pieceIndex: door.pieceIndex, model: 'build_wall', texture: textures.wall,
       matrix: new Matrix4().makeRotationY(piece.turn * Math.PI / 2)
         .scale(new Vector3(0.75, 1, 1)).setPosition(facePosition(piece)) });
@@ -102,7 +104,7 @@ export function mountBuilder(assets, play, pause) {
     controls.maxPolarAngle = Math.PI * 0.47;
     controls.minZoom = 0.25; controls.maxZoom = 6;
     controls.addEventListener('change', redraw);
-    await Promise.all(Object.entries({ ground: 'checker_green', ...Object.fromEntries(
+    await Promise.all(Object.entries({ ground: 'checker_green', wall_frame: 'gold', ...Object.fromEntries(
       Object.keys(models).map(type => [models[type], textures[type]])) }).map(async ([model, texture]) => {
       const [asset, map] = await Promise.all([assets.mesh(model), assets.texture(texture)]);
       resources[model] = { geometry: asset.geometry, material: new MeshLambertMaterial({ map }) };
@@ -155,14 +157,14 @@ export function mountBuilder(assets, play, pause) {
       const floor = tool === 'floor';
       ghost.position.copy(facePosition(piece)).y = floor ? 0.045 : 1.2;
       ghost.rotation.y = piece.turn * Math.PI / 2;
-      ghost.scale.set(2, floor ? 0.04 : 2.4, floor ? 2 : 0.2);
+      ghost.scale.set(2, floor ? 0.04 : 2.4, floor ? 2 : piece.mounted ? 0.002 : 0.2);
     }
     redraw();
   }
   canvas.addEventListener('pointermove', preview);
   canvas.addEventListener('pointerleave', () => { ghost.visible = false; redraw(); });
   canvas.addEventListener('pointerdown', event => {
-    if (!resources.ground || !resources.build_wall || !resources.tunnel || !resources.build_floor || tool === 'orbit' || event.button !== 0) return;
+    if (!resources.wall_frame || !resources.ground || !resources.build_wall || !resources.tunnel || !resources.build_floor || tool === 'orbit' || event.button !== 0) return;
     const piece = point(event);
     if (!piece) return;
     let index;
