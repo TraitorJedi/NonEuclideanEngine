@@ -66,6 +66,7 @@ async function loadLevel(index, level = buildLevel(index)) {
     level.scene.add(mesh);
     level.colliders.push(...asset.collision.map(points => makeCollider(points, matrix)));
   }
+  level.lowestElevation = level.colliders.reduce((lowest, collider) => Math.min(lowest, collider.bounds.min.y), level.spawn[1]);
   return level;
 }
 

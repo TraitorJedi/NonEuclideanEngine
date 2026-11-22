@@ -17,7 +17,7 @@ export function compileLayout(parts) {
     }
     for (const [i, door] of level.portals.entries()) {
       const [x, y, z, angle, size] = part.doors[i].pose;
-      door.matrix.multiply(pose(0, 0, 0, angle, size));
+      door.matrix.premultiply(pose(0, 0, 0, angle, size));
       door.position.add(new Vector3(x, y, z));
       door.matrix.setPosition(door.position).premultiply(group);
       door.position.setFromMatrixPosition(door.matrix);

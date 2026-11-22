@@ -7,6 +7,10 @@ const key = 'nonEuclidean.builder.v1';
 const models = { floor: 'build_floor', wall: 'build_wall', door: 'tunnel' };
 const textures = { floor: 'checker_green', wall: 'checker_gray', door: 'gold' };
 
+function sameCell(a, b) {
+  return a.x === b.x && a.z === b.z && (a.height ?? 0) === (b.height ?? 0);
+}
+
 // The wall face is 0.08 units from its center. Bias the decal to avoid z-fighting.
 function facePosition(piece) {
   const yaw = piece.turn * Math.PI / 2;
@@ -197,11 +201,11 @@ export function mountBuilder(assets, play, pause) {
       const wall = pieces[index];
       if (wall.type === 'wall' && Math.abs(hit.face.normal.z) > 0.99) {
         const facing = (wall.turn + (hit.face.normal.z > 0 ? 2 : 0)) % 4;
-        const endpoint = pieces.findIndex(p => p.mounted && p.x === wall.x && p.z === wall.z && p.turn === facing);
+        const endpoint = pieces.findIndex(p => p.mounted && sameCell(p, wall) && p.turn === facing);
         if (endpoint >= 0) index = endpoint;
       }
     } else if (tool === 'door') {
-      const existing = pieces.findIndex(p => p.mounted && p.x === piece.x && p.z === piece.z && p.turn === piece.turn);
+      const existing = pieces.findIndex(p => p.mounted && sameCell(p, piece) && p.turn === piece.turn);
       if (existing >= 0) {
         if ((pieces[existing].size ?? 1) !== piece.size) {
           history.push(pieces.slice());
@@ -213,13 +217,13 @@ export function mountBuilder(assets, play, pause) {
       }
       index = -1;
     } else {
-      index = pieces.findIndex(p => !p.mounted && p.x === piece.x && p.z === piece.z);
-      if (index >= 0 && pieces[index].type === tool && pieces[index].turn === turn && (pieces[index].height ?? 0) === piece.height && (pieces[index].rise ?? 0) === piece.rise) return;
+      index = pieces.findIndex(p => !p.mounted && sameCell(p, piece));
+      if (index >= 0 && pieces[index].type === tool && pieces[index].turn === turn && (pieces[index].rise ?? 0) === piece.rise) return;
     }
     history.push(pieces.slice());
     if (index >= 0) {
       const [removed] = pieces.splice(index, 1);
-      if (removed.type === 'wall') pieces = pieces.filter(p => !p.mounted || p.x !== removed.x || p.z !== removed.z);
+      if (removed.type === 'wall') pieces = pieces.filter(p => !p.mounted || !sameCell(p, removed));
     }
     if (tool !== 'erase') {
       if (tool === 'door') {

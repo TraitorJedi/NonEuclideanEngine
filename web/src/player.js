@@ -88,6 +88,6 @@ export class Player {
       this.scale *= Math.hypot(e[0], e[2]);
       this.crossings++;
     }
-    if (this.position.y < -30 * this.scale) this.reset(level.spawn);
+    if (this.position.y < level.lowestElevation - 30 * this.scale) this.reset(level.spawn);
   }
 }
