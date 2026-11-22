@@ -11,13 +11,21 @@ const textures = { floor: 'checker_green', wall: 'checker_gray', door: 'gold' };
 function facePosition(piece) {
   const yaw = piece.turn * Math.PI / 2;
   const offset = piece.mounted ? 0.082 : 0;
-  return new Vector3(piece.x - Math.sin(yaw) * offset, 0, piece.z - Math.cos(yaw) * offset);
+  return new Vector3(piece.x - Math.sin(yaw) * offset, piece.height ?? 0, piece.z - Math.cos(yaw) * offset);
 }
 
 function matrix(piece) {
   const scale = piece.type === 'door' && !piece.mounted ? new Vector3(1.25, 1.2, 0.11) : new Vector3(1, 1, 1);
-  return new Matrix4().makeRotationY(piece.turn * Math.PI / 2).scale(scale)
-    .setPosition(facePosition(piece).setY(piece.type === 'floor' ? 0.008 : 0));
+  const transform = new Matrix4().makeRotationY(piece.turn * Math.PI / 2);
+  const position = facePosition(piece);
+  if (piece.type === 'floor') {
+    const rise = piece.rise ?? 0;
+    transform.multiply(new Matrix4().makeRotationX(-Math.atan(rise / 2)));
+    scale.z = Math.hypot(1, rise / 2);
+    position.y += rise / 2 + 0.008;
+  }
+  if (piece.type === 'door') scale.multiplyScalar(piece.size ?? 1);
+  return transform.scale(scale).setPosition(position);
 }
 
 export function buildDraft(pieces) {
@@ -27,10 +35,11 @@ export function buildDraft(pieces) {
   for (const [pieceIndex, piece] of pieces.entries()) {
     objects.push({ pieceIndex, model: piece.mounted ? 'wall_frame' : models[piece.type], texture: textures[piece.type], matrix: matrix(piece) });
     if (piece.type !== 'door') continue;
-    const halfHeight = piece.mounted ? 1.1 : 1.2;
-    const position = facePosition(piece).setY(halfHeight);
+    const size = piece.size ?? 1;
+    const halfHeight = (piece.mounted ? 1.1 : 1.2) * size;
+    const position = facePosition(piece).add(new Vector3(0, halfHeight, 0));
     const transform = new Matrix4().makeRotationY(piece.turn * Math.PI / 2)
-      .scale(new Vector3(0.75, halfHeight, 1)).setPosition(position);
+      .scale(new Vector3(0.75 * size, halfHeight, size)).setPosition(position);
     const portal = { mounted: !!piece.mounted, pieceIndex, position, matrix: transform, inverse: transform.clone().invert(),
       normal: new Vector3(0, 0, -1).transformDirection(transform), sides: {} };
     const mate = pairs.get(piece.pair);
@@ -62,6 +71,9 @@ export function mountBuilder(assets, play, pause) {
   let pieces = [];
   try { pieces = JSON.parse(localStorage.getItem(key)) ?? []; } catch { /* New draft */ }
   let tool = 'floor', turn = 0, engine, controls;
+  const height = dialog.querySelector('#tile-height input');
+  const rise = dialog.querySelector('#tile-rise input');
+  const size = dialog.querySelector('#door-scale input');
   const history = [];
   const scene = new Scene();
   scene.background = new Color(0x212a25);
@@ -139,25 +151,29 @@ export function mountBuilder(assets, play, pause) {
     if (tool === 'door') {
       const hit = ray.intersectObjects(placed.children)[0];
       const wall = pieces[hit?.object.userData.pieceIndex];
+      if (wall?.type === 'door' && wall.mounted) return { ...wall, size: size.valueAsNumber };
       if (wall?.type !== 'wall' || Math.abs(hit.face.normal.z) < 0.99) return;
       const facing = (wall.turn + (hit.face.normal.z > 0 ? 2 : 0)) % 4;
-      return { type: 'door', mounted: true, x: wall.x, z: wall.z, turn: facing };
+      return { type: 'door', mounted: true, height: wall.height ?? 0, size: size.valueAsNumber, x: wall.x, z: wall.z, turn: facing };
     }
-    const hit = ray.ray.intersectPlane(new Plane(new Vector3(0, 1, 0), 0), new Vector3());
+    const placementHeight = tool === 'wall' || tool === 'floor' ? height.valueAsNumber : 0;
+    const hit = ray.ray.intersectPlane(new Plane(new Vector3(0, 1, 0), -placementHeight), new Vector3());
     if (!hit) return;
     const edge = tool === 'wall' || tool === 'door';
     const dx = edge && turn % 2 ? 1 : 0, dz = edge && !(turn % 2) ? 1 : 0;
     return { x: Math.round((hit.x - dx) / 2) * 2 + dx,
-      z: Math.round((hit.z - dz) / 2) * 2 + dz, type: tool, turn };
+      z: Math.round((hit.z - dz) / 2) * 2 + dz, type: tool, turn, height: height.valueAsNumber, rise: tool === 'floor' ? rise.valueAsNumber : 0 };
   }
   function preview(event) {
     const piece = point(event);
     ghost.visible = !!piece && !['orbit', 'erase'].includes(tool);
     if (ghost.visible) {
-      const floor = tool === 'floor';
-      ghost.position.copy(facePosition(piece)).y = floor ? 0.045 : 1.2;
-      ghost.rotation.y = piece.turn * Math.PI / 2;
-      ghost.scale.set(2, floor ? 0.04 : 2.4, floor ? 2 : piece.mounted ? 0.002 : 0.2);
+      const geometry = resources[piece.mounted ? 'wall_frame' : models[tool]]?.geometry;
+      if (geometry) ghost.geometry = geometry;
+      ghost.matrixAutoUpdate = false;
+      ghost.matrix.copy(matrix(piece));
+      ghost.matrix.elements[13] += 0.012;
+      ghost.matrixWorldNeedsUpdate = true;
     }
     redraw();
   }
@@ -167,6 +183,8 @@ export function mountBuilder(assets, play, pause) {
     if (!resources.wall_frame || !resources.ground || !resources.build_wall || !resources.tunnel || !resources.build_floor || tool === 'orbit' || event.button !== 0) return;
     const piece = point(event);
     if (!piece) return;
+    const inputs = tool === 'door' ? [size] : tool === 'floor' ? [height, rise] : tool === 'wall' ? [height] : [];
+    if (!inputs.every(input => input.reportValidity())) return;
     let index;
     if (tool === 'erase') {
       const rect = canvas.getBoundingClientRect();
@@ -183,11 +201,20 @@ export function mountBuilder(assets, play, pause) {
         if (endpoint >= 0) index = endpoint;
       }
     } else if (tool === 'door') {
-      if (pieces.some(p => p.mounted && p.x === piece.x && p.z === piece.z && p.turn === piece.turn)) return;
+      const existing = pieces.findIndex(p => p.mounted && p.x === piece.x && p.z === piece.z && p.turn === piece.turn);
+      if (existing >= 0) {
+        if ((pieces[existing].size ?? 1) !== piece.size) {
+          history.push(pieces.slice());
+          pieces[existing] = { ...pieces[existing], size: piece.size };
+          save();
+        }
+        status.textContent = 'Door pair ' + pieces[existing].pair + ' - endpoint size ' + piece.size + 'x';
+        return;
+      }
       index = -1;
     } else {
       index = pieces.findIndex(p => !p.mounted && p.x === piece.x && p.z === piece.z);
-      if (index >= 0 && pieces[index].type === tool && pieces[index].turn === turn) return;
+      if (index >= 0 && pieces[index].type === tool && pieces[index].turn === turn && (pieces[index].height ?? 0) === piece.height && (pieces[index].rise ?? 0) === piece.rise) return;
     }
     history.push(pieces.slice());
     if (index >= 0) {
@@ -210,10 +237,13 @@ export function mountBuilder(assets, play, pause) {
     if (!button) return;
     if (button.dataset.tool) {
       tool = button.dataset.tool;
+      height.parentElement.hidden = !['wall', 'floor'].includes(tool);
+      rise.parentElement.hidden = tool !== 'floor';
+      size.parentElement.hidden = tool !== 'door';
       if (controls) controls.enabled = tool === 'orbit';
       for (const b of dialog.querySelectorAll('[data-tool]')) b.setAttribute('aria-pressed', String(b === button));
       ghost.visible = false; redraw();
-      status.textContent = tool === 'door' ? 'Click a broad wall face. Orbit to reach the opposite side.' : tool === 'orbit' ? 'Drag to orbit. Pinch or scroll to zoom. Right-drag or use two fingers to pan.' : 'Tap the grid to ' + (tool === 'erase' ? 'erase a piece' : 'place a ' + tool);
+      status.textContent = tool === 'door' ? 'Set endpoint size (0.1-1), then click a wall face or an existing door.' : tool === 'orbit' ? 'Drag to orbit. Pinch or scroll to zoom. Right-drag or use two fingers to pan.' : tool === 'floor' ? 'Set base height and rise, rotate the uphill direction, then click a tile.' : 'Tap the grid to ' + (tool === 'erase' ? 'erase a piece' : 'place a ' + tool);
     }
     switch (button.dataset.action) {
       case 'rotate': turn = (turn + 1) % 4; status.textContent = 'Placement rotation ' + turn * 90 + '°'; ghost.visible = false; redraw(); break;
